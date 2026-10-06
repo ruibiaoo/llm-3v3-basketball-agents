@@ -1,0 +1,40 @@
+provider:
+  base_url: https://openrouter.ai/api/v1
+  api_key_env: OPENROUTER_API_KEY
+  app_name: dsa4213-3x3-agents
+  routing:
+    order: []
+    allow_fallbacks: false
+
+players:
+  model: openai/gpt-oss-120b
+  temperature: 0.7
+  top_p: 1.0
+  max_tokens: 500
+  seed: null
+  output_format: xml
+  include_rationale: true
+  timeout_s: 45
+  max_retries: 3
+  repair_attempts: 1
+
+referee:
+  enabled: false
+  backend: rule_based
+  model: openai/gpt-oss-120b
+  temperature: 0.0
+  max_tokens: 200
+  output_format: xml
+  top_k_rules: 3
+
+embeddings:
+  backend: local
+  model: sentence-transformers/all-MiniLM-L6-v2
+
+runtime:
+  max_concurrent_requests: 12
+  cache:
+    enabled: true
+    path: .cache/llm_cache.sqlite
+  budget:
+    max_usd_per_experiment: 25.0

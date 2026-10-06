@@ -1,0 +1,17 @@
+experiment_id: abl_captain_v1
+matchup:
+  home:
+    label: A_full
+    coordination:
+      comms: true
+      captain: true
+      memory_write: true
+  away:
+    label: C_no_captain
+    coordination:
+      comms: true
+      captain: false
+      memory_write: true
+seeds: [101, 102, 103, 104, 105, 106, 107, 108, 109, 110]
+swap_first_possession: true
+max_concurrent_games: 4
