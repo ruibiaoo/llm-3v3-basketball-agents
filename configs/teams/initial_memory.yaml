@@ -1,0 +1,10 @@
+# initial shared team memory
+game_plan: "attack switches, keep spacing in corners"
+coach_instructions: "play tough defense, rotate quickly"
+opponent_scouting:
+  - opponent_slot: P1
+    category: defensive_tendency
+    tendency: "leaves passing lanes open on contested drives"
+  - opponent_slot: P2
+    category: defensive_tendency
+    tendency: "foul prone"

@@ -1,0 +1,43 @@
+# sample roster template, fill in chosen fiba 3x3 players
+source_note: "FIBA 3x3 sample roster"
+captain: P1
+
+players:
+  - slot: P1
+    name: "Player 1"
+    source_url: "https://fiba3x3.com"
+    abilities:
+      shooting: 7
+      passing: 8
+      defense: 6
+      stamina: 8
+      ball_handling: 7
+      rebounding: 6
+    playstyle: "prefers driving to the basket and passing to open cutters"
+    synthetic_fields: []
+
+  - slot: P2
+    name: "Player 2"
+    source_url: "https://fiba3x3.com"
+    abilities:
+      shooting: 8
+      passing: 6
+      defense: 7
+      stamina: 7
+      ball_handling: 6
+      rebounding: 5
+    playstyle: "perimeter shooter who moves without the ball"
+    synthetic_fields: []
+
+  - slot: P3
+    name: "Player 3"
+    source_url: "https://fiba3x3.com"
+    abilities:
+      shooting: 5
+      passing: 5
+      defense: 8
+      stamina: 8
+      ball_handling: 5
+      rebounding: 9
+    playstyle: "strong rebounder and interior defender"
+    synthetic_fields: []
