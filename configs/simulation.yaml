@@ -65,6 +65,7 @@ pass_model:
   b_distance: -0.15
   b_lane_defender: -1.5
   b_def_intercept: 0.1
+  lane_width_cells: 1.0        # half-width of the passing-lane corridor
 
 drive_model:
   base: 0.0

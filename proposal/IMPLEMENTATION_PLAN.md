@@ -14,8 +14,10 @@ Source: [proposal/DSA4213 Group Project Proposal.pdf](proposal/DSA4213%20Group%2
 |---|---|---|
 | — | LLM backend | **OpenRouter**, set in `configs/llm.yaml`. **One model config shared by all 6 player agents.** The referee has its own config block and can be built later (rule-based fallback until then). |
 | — | Game format | **Full FIBA 3x3:** 10-minute clock **or** first to 21. A tie at time goes to overtime (first to score 2 points in OT). |
-| — | Deliverable | **Backend only.** No UI. |
+| — | Deliverable | **Backend only.** No UI. Display is post-hoc visualisation, never part of the graded deliverable. |
 | — | Organisation | **Workstreams**, not assigned to people. |
+| — | Display standing | **Visualisation only, never evidence.** Offline renderer now (reads live `GameState`); JSONL replay after the WS6 writer lands; guarded live runner hook for pilot and experiment games under a flag; their Vue app is a deferred stretch goal with no exit criterion. Frames never enter metrics, stats, or findings. |
+| — | BasketWorld role | **Reference and display patterns only** (`adopt_basketworld.md`). MIT-licensed third party; the engine stays the source of truth. Parity figures are methods-only disclosure, never results. |
 | 1 | Referee trigger | The referee is called **on every resolved state**. It only makes a call when warranted; most states return `call="NONE"`. |
 | 2 | Team B / Team C | Team B (no comms): the captain **can still issue `<c>[action]` directives** and tactic calls; non-captains send no messages. Team C (no captain): **CSSR is ignored**. The metrics that matter for A vs C are **CCAR and PPP**. |
 | 3 | CS table | The counter-strategy table **starts empty for all teams**. |
@@ -35,6 +37,7 @@ Source: [proposal/DSA4213 Group Project Proposal.pdf](proposal/DSA4213%20Group%2
 4. **An ablation is a config flag, not a code branch.** Teams A–D differ only in `coordination: {comms, captain, memory_write}`.
 5. **Log every metric's inputs.** Every metric must be computable from the JSONL event logs alone.
 6. **Reproducibility.** Seeded RNG streams, pinned model and provider, config snapshots per game, and the prompt template hash in every record.
+7. **Display and third-party code never perturb experiments.** The display path is read-only: no RNG draws, no state mutation, no prompt or log changes, failure-isolated, flag-gated. BasketWorld code never runs inside the engine; parity runs are separate processes whose figures are methods-only disclosure.
 
 ---
 
@@ -80,6 +83,8 @@ flowchart LR
     end
 
     LOG["Event log (JSONL)"] --> ANA["Analysis: possessions, metrics, stats"]
+    LOG --> DISP["Display, read-only: renderer, replay, live hook"]
+    %% DISP is read-only: deliberately no edge returns into LOOP.
 
     Config --> Runner
     LOOP --> OBS --> PA --> PARSE --> LEGAL --> RES --> CONTACT --> Ref --> RULES --> INV --> LOOP
@@ -99,6 +104,7 @@ sequenceDiagram
     participant E as Engine
     participant F as Referee
     participant L as EventLog
+    participant D as Display (read-only, flag-gated)
 
     R->>O: build 6 observations (state + t-1 msgs/calls + memory)
     O->>P: prompts (async gather)
@@ -112,6 +118,7 @@ sequenceDiagram
     E->>E: apply rules (score, FTs, possession, clocks, fatigue)
     E->>E: run 20 invariants (SIR)
     R->>L: write decision/outcome/memory/referee records
+    R->>D: live hook with a state snapshot (post-log; failures counted, never fail the game)
     R->>R: next decision event or end game
 ```
 
@@ -140,10 +147,14 @@ sequenceDiagram
 
 ```
 llm-3v3-basketball-agents/
-├── IMPLEMENTATION_PLAN.md
+├── adopt_basketworld.md           # BasketWorld reuse guide (display + parity, dev-only)
+├── third_party/                  # gitignored: read-only BasketWorld clone + attribution
+├── proposal/
+│   └── IMPLEMENTATION_PLAN.md
 ├── configs/
 │   ├── llm.yaml                  # OpenRouter models/params (players + referee)
 │   ├── simulation.yaml           # court, clocks, time costs, resolver coefficients
+│   ├── display.yaml              # display hook + replay settings (never affects games)
 │   ├── teams/
 │   │   ├── roster.yaml           # YOU fill in: 3 players + captain (mirrored for both teams)
 │   │   └── initial_memory.yaml   # pre-game scouting, game plan, coach instructions
@@ -167,10 +178,17 @@ llm-3v3-basketball-agents/
 │   │   ├── rules.py              # FIBA 3x3: clearing, fouls, bonus, OT, end conditions
 │   │   ├── clock.py              # game/shot clock, action time costs
 │   │   ├── invariants.py         # 20 constraints from proposal Table 3
-│   │   └── rng.py                # seeded independent RNG streams
+│   │   ├── rng.py                # seeded independent RNG streams
+│   │   ├── abilities.py          # roster mirror lookup (schemas stay frozen)
+│   │   ├── movement.py           # direction/speed labels for observations
+│   │   └── loop.py               # WS1 validation harness (not the WS7 runner)
+│   ├── display/                  # read-only visualisation; engine never imports this
+│   │   ├── square_render.py      # ASCII + matplotlib frames from live GameState
+│   │   ├── replay.py             # JSONL state/resolution records -> GIF + shot charts
+│   │   └── live_hook.py          # runner hook: snapshot in, frames out, failures isolated
 │   ├── agents/
-│   │   ├── base.py               # Agent protocol: decide(obs) -> AgentOutput
-│   │   ├── llm_player.py
+│   │   ├── base.py               # WS1 baseline interface: decide(state) -> ActionProposal
+│   │   ├── llm_player.py         # WS3: decide(obs) -> AgentOutput via LLM
 │   │   ├── heuristic_player.py   # non-LLM baseline for engine validation
 │   │   ├── random_player.py      # fuzzing
 │   │   ├── observation.py        # GameState -> per-agent observation (Code 1 format)
@@ -194,9 +212,9 @@ llm-3v3-basketball-agents/
 │   │   ├── client.py             # OpenRouter async client, retries
 │   │   ├── cache.py              # SQLite cache (debug/pilot)
 │   │   └── budget.py             # token/cost accounting, hard stop
-│   ├── logging/event_log.py
+│   ├── logging/event_log.py      # JSONL writer; guarantees the display contract
 │   ├── runner/
-│   │   ├── game.py               # decision-event loop
+│   │   ├── game.py               # decision-event loop (+ guarded display hook call)
 │   │   ├── experiment.py         # matchups x seeds, resumable, concurrent games
 │   │   └── cli.py
 │   └── analysis/
@@ -206,7 +224,8 @@ llm-3v3-basketball-agents/
 │       └── qualitative.py        # possession transcripts for manual review
 ├── tests/
 ├── notebooks/
-└── runs/                         # gitignored: runs/<exp_id>/<game_id>/...
+│   └── basketworld_parity.py     # dev-only parity script (WS7 Phase 1, excluded from CI)
+└── runs/                         # gitignored: runs/<exp_id>/<game_id>/... (+ frames/)
 ```
 
 ---
@@ -363,6 +382,25 @@ The other two files differ only in the away team:
 |---|---|---|
 | `ablation_captain.yaml` | `C_no_captain` | `{comms: true, captain: false, memory_write: true}` |
 | `ablation_memory.yaml` | `D_read_only` | `{comms: true, captain: true, memory_write: false}` |
+
+### 5.6 `configs/display.yaml`
+
+```yaml
+display:
+  enabled: false                 # true only where the run config allows it
+  mode: "off"                    # off | live | post (post renders from JSONL after the game)
+  out_dir: frames                # under runs/<exp_id>/<game_id>/
+  every_n_events: 1              # frame throttle; raise if render cost binds
+  max_frames_per_game: 2000
+  fail_isolated: true            # hook exceptions are counted, never fail the game
+```
+
+Semantics. `live` invokes the hook after each log write with a deep-copied
+snapshot; `post` renders from the finished JSONL without touching the game.
+Pilot and experiment configs may set `enabled: true`; main runs default to
+off unless the pilot shows the per-event render cost fits the wall-clock
+budget. Display settings are snapshotted per game like all configs, but
+they never enter prompts, logs of decisions, metrics, or findings.
 
 ---
 
@@ -538,8 +576,28 @@ $$P(\text{make}) = \sigma(\beta_0 + \beta_1\cdot\text{shooting} + \beta_2\cdot\t
 - Resolver and rule unit tests.
 - `hypothesis` fuzz test: 1,000 random-agent games give zero invariant violations.
 - Calibration: heuristic-vs-heuristic FG% (1-pt and 2-pt), PPP and possessions per game should land in a plausible range against public FIBA 3x3 stats.
+- Display renderer (now, against live `GameState`): an ASCII golden frame plus frame determinism (the same state renders byte-identical pixels); the reference heuristic game renders to GIF without error. JSONL replay tests wait for the WS6 writer.
+- BasketWorld parity is **not** a WS1 exit item. It runs in WS7 Phase 1 as methods-only validation (see the WS1-adjacent subsection).
 
 **Done when:** `bball run-game --agents heuristic` completes a full game, including overtime and the 21-point end, with a valid log and SIR = 0.
+
+### WS1-adjacent: BasketWorld (EvanZ, MIT) — evaluation and bounded use
+
+Evaluated [`github.com/EvanZ/basketworld`](https://github.com/EvanZ/basketworld) (MIT License, Copyright 2025 Evan Zamir) as a possible engine starting point. **Verdict: do not adopt it as the engine.** Our engine stays the source of truth. The reasons, from the files inspected (`basketworld/envs/basketworld_3x3_env.py`, `basketworld_env_v2.py` header, `envs/core/shooting.py`, `envs/core/passing.py`):
+
+1. **Geometry mismatch.** BasketWorld plays on a hex grid (16×16 default; the simple 3x3 env is 12×8). The proposal fixes a square 15×11 grid at 1 m per cell with coordinates like (4,6) and a 6.75 m arc. Adopting means rewriting court, zones, and every distance computation — the port, not the saving.
+2. **Rules mismatch.** The inspected envs end episodes on the first basket or a step cap (simple env: 48 steps ≈ a 24 s clock; v2 uses a 24 s shot clock). No clearing rule, no 21-point / 10-minute ends, no team-foul bonus ladder, and no overtime were found in the files inspected. The FIBA 3x3 core would still be built from scratch.
+3. **Action-model mismatch.** BasketWorld has ~8 atomic actions (stay, move, pass, shoot, steal) resolved as simultaneous steps. WS1 needs 24 tactical actions with role legality, spec remapping, IAR accounting, and a decision-event interface feeding the LLM layer and the every-state referee.
+4. **Shot-model mismatch.** Their make probability interpolates linearly from layup% to three-pt% with a pressure multiplier. WS1 requires the named-term logistic (`shooting`, `shotquality`, `contest`, `fatigue`) because the event log, transparency, and sensitivity analysis depend on those terms. Adopting hides exactly what the metrics need.
+5. **Dependency weight.** Their primary path is JAX/Flax/Optax/Orbax plus FastAPI/Vue/MLflow. Our stack is NumPy plus Pydantic. Even the simple env adds Gymnasium for no engine benefit.
+
+**Approved bounded use (dev-only; never an engine dependency):**
+
+- **Parity and fuzz reference (WS7 Phase 1 owner; methods-only).** Drive both engines with random/heuristic play and compare possession dynamics, turnover rates, and game lengths. Investigate divergences; never auto-sync coefficients. Figures are disclosed in methods and excluded from results.
+- **Geometry cross-checks.** Their collision rule (same-cell targeting leaves both in place) and point-to-segment lane logic are useful second opinions on our movement-limit and pass-lane code.
+- **Attribution and hygiene.** Lazy-import any adapter (a notebook or dev script, excluded from CI). Do not vendor the JAX path. Reproduce no excerpt without retaining the MIT copyright notice.
+- **Not a calibration substitute.** BasketWorld is tuned for RL self-play, not fitted to FIBA 3x3 statistics, so the WS1/WS7 calibration step against public FIBA stats still stands.
+- **Frontend display.** The graded deliverable stays backend-only (no UI). Display reuse is tracked separately in `adopt_basketworld.md`: an offline square-court renderer and JSONL replay first; their Vue-plus-FastAPI app only as a deferred shim. No engine dependency either way.
 
 ---
 
@@ -769,17 +827,20 @@ The engine's contact detector only *annotates* the state. The referee still sees
 
 **Qualitative tools.** `bball transcript <game> <possession>` prints a readable transcript of observations, messages, calls, actions, rationales, memory references, referee calls and outcomes. This supports the Phase 3 manual review.
 
+**Display contract (feeds `adopt_basketworld.md`).** The writer guarantees two things the replay renderer consumes and nothing else: every event appends a `state` record carrying the full `GameState`, and every `resolution` record carries shooter and receiver positions plus all model terms (including `p_make`). The runner exposes a read-only hook invoked after the log write — `display.live_hook(snapshot, ctx)` where the snapshot is a deep copy and `ctx` carries `event_idx`, `exp_id`, `game_id`, and the display config. The hook draws no RNG, mutates nothing, and its exceptions are caught, counted, and never fail the game. Frames land in `runs/<exp_id>/<game_id>/frames/`. Transcripts may embed frames as illustration; frames are never evidence and never enter any metric.
+
 ---
 
 ### WS7 — Experiments and Reporting
 
 **Phase 1: System validation (not included in results)**
 1. Heuristic vs heuristic: 1,000 games for SIR = 0 and resolver calibration.
+1b. BasketWorld parity (methods-only, owned here): random-play comparison against the BasketWorld simple env on possession dynamics, turnover rates, and game lengths. Divergences are investigated, coefficients are never auto-synced, and the figures are disclosed in the report's methods section and excluded from all results.
 2. LLM pilot: 3–5 games, to measure parse rate, IAR, events per game, tokens per call, cost, wall-clock time and referee call rate. **Decide XML vs JSON mode here.**
 3. Tune prompts, the similarity threshold τ, and the message window.
 4. **Freeze** prompts and configs. The commit hash is recorded in every run.
 
-**Phase 2: Main ablations.** Run `ablation_comms`, `ablation_captain` and `ablation_memory`. Each uses N seeds × 2 (swapped first possession). The target is N = 10, adjusted after the pilot. If the budget gets tight, cut seeds before cutting conditions.
+**Phase 2: Main ablations.** Run `ablation_comms`, `ablation_captain` and `ablation_memory`. Each uses N seeds × 2 (swapped first possession). The target is N = 10, adjusted after the pilot. If the budget gets tight, cut seeds before cutting conditions. Pilot and experiment configs may enable the live display hook (`display.enabled: true`); it is read-only, flag-gated, and failure-isolated, its frames are stored per game and excluded from metrics, and the pilot must first show the per-event render cost fits the wall-clock budget — otherwise main runs stay on `post` or `off`.
 
 **Phase 3: Robustness and qualitative review**
 - Seed-stability analysis.
@@ -790,6 +851,8 @@ The engine's contact detector only *annotates* the state. The referee still sees
 - Metric tables and adaptation curves.
 - Directive → action examples.
 - A memory-driven adaptation case study.
+- Representative replay GIFs, labelled as illustration, never as evidence.
+- A methods note on BasketWorld reuse (parity scope, MIT attribution).
 - A limitations section: sim-to-real gap, model dependence, and the referee backend used.
 
 ---
@@ -844,6 +907,7 @@ These are rough assumptions:
 | Cost per game, mid-tier model (~$1/M in, $4/M out) | ~$6 |
 | Wall-clock per game (6 parallel player calls, then 1 serial referee call per event) | ~20–35 min |
 | Full study: 3 ablations × 10 seeds × 2 = 60 games | ~$57 cheap / ~$360 mid-tier |
+| Display rendering (optional, no LLM cost) | Offline replay at seconds per game; live hook adds per-event render cost, measured in the pilot before main runs may enable it; PNG frames ≈ 100–200 KB each, stored per game outside the log |
 
 > [!TIP]
 > The referee call is on the critical path of every event. Using a fast, cheap model for the referee, and keeping retrieved excerpts short, matters more for wall-clock time than for cost. Running 4–8 games concurrently hides most of the latency.
@@ -859,6 +923,8 @@ These are rough assumptions:
 | Integration | Full game with `FakeLLM` in CI. One test per ablation flag, checking that the right channels are suppressed and Team B's captain directives are still delivered |
 | Regression | Golden log for a fixed seed with heuristic agents |
 | LLM smoke | Manual or nightly short game against the real OpenRouter model |
+| Display | Renderer golden ASCII plus frame determinism; live-hook failure isolation (a raising hook never fails the game); full suite green with `third_party/` absent |
+| Parity (WS7 Phase 1) | Random-play BasketWorld comparison; methods-only disclosure, excluded from results |
 
 ---
 
@@ -867,15 +933,16 @@ These are rough assumptions:
 | Milestone | Exit criterion | Workstreams |
 |---|---|---|
 | **M0** Contracts | Schemas, config templates and skeleton merged; CI green | WS0 |
-| **M1** Engine alive | Heuristic full games; SIR = 0 over 1,000 games; logs valid; rule-based referee runs every state | WS1, WS5-A, WS6 |
+| **M1** Engine alive | Heuristic full games; SIR = 0 over 1,000 games; logs valid; rule-based referee runs every state; square renderer builds the reference-game GIF | WS1, WS5-A, WS6 |
 | **M2** LLM game | LLM-vs-LLM full game, XML parse failure < 2%, IAR < 5%, cost measured | WS2, WS3 |
 | **M3** Full coordination | All three flags verified; memory and CS merge working | WS4 |
 | **M4** Pilot and freeze | Pilot done; output mode, N and τ chosen; configs frozen. Roster filled in by you | WS7 |
 | **M5** Experiments | All three ablations run; metrics computed | WS6, WS7 |
-| **M6** Analysis | Stats, curves, qualitative review, report figures | WS6, WS7 |
+| **M6** Analysis | Stats, curves, qualitative review, report figures (replay GIFs as illustration) | WS6, WS7 |
 | (parallel) | LLM referee with RAG swapped in before M4 if ready; otherwise the rule-based referee is documented as a limitation | WS5-B |
+| (non-goal) | Vue-app shim stays a deferred stretch with no exit criterion; display and parity gate nothing | — |
 
-**Critical path:** WS0 → WS1 → WS3 → M4 pilot → experiments.
+**Critical path:** WS0 → WS1 → WS3 → M4 pilot → experiments. Display and parity run off the critical path.
 
 ---
 
@@ -892,6 +959,10 @@ These are rough assumptions:
 | First-possession advantage | Each seed played twice with the starting team swapped |
 | Engine favours one style | Heuristic calibration plus coefficient sensitivity sweep |
 | Rate limits during long runs | Semaphore, backoff, resumable runner (one log per game, skip completed games) |
+| Display perturbing experiments | Read-only hook by construction: no RNG, no mutation, post-log invocation, flag-gated, failure-isolated; frames excluded from metrics; main runs stay off/`post` unless the pilot clears the cost |
+| BasketWorld figures read as results | Methods-only disclosure in Phase 1; uncalibrated self-play numbers never appear in results tables or findings |
+| Vue-shim scope creep | Deferred stretch with no exit criterion; the offline renderer satisfies visualisation needs |
+| Square/hex confusion | No conversion path exists; the renderer reads square coords directly; third-party sim never runs in-process; reference clone pinned by commit hash in the attribution file |
 
 ---
 

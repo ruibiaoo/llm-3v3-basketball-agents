@@ -123,6 +123,15 @@ class ExperimentConfig(BaseModel):
     swap_first_possession: bool = True
     max_concurrent_games: int = 4
 
+# display configuration (read-only visualisation; never affects games)
+class DisplayConfig(BaseModel):
+    enabled: bool = False
+    mode: Literal["off", "live", "post"] = "off"
+    out_dir: str = "frames"
+    every_n_events: int = 1
+    max_frames_per_game: int = 2000
+    fail_isolated: bool = True
+
 # loader functions
 def load_yaml(path: str | Path) -> dict[str, Any]:
     with open(path, "r", encoding="utf-8") as f:
@@ -149,3 +158,8 @@ def load_initial_memory_config(
 def load_experiment_config(path: str | Path) -> ExperimentConfig:
     data = load_yaml(path)
     return ExperimentConfig(**data)
+
+
+def load_display_config(path: str | Path = "configs/display.yaml") -> DisplayConfig:
+    data = load_yaml(path)
+    return DisplayConfig(**(data.get("display") or {}))

@@ -220,3 +220,6 @@ __marimo__/
 # simulation runs
 runs/
 
+# Third-party reference clone (dev-only, see adopt_basketworld.md)
+third_party/
+

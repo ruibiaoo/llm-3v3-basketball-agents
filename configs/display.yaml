@@ -1,0 +1,7 @@
+display:
+  enabled: false                 # true only where the run config allows it
+  mode: "off"                    # off | live | post (post renders from JSONL after the game)
+  out_dir: frames                # under runs/<exp_id>/<game_id>/
+  every_n_events: 1              # frame throttle; raise if render cost binds
+  max_frames_per_game: 2000
+  fail_isolated: true            # hook exceptions are counted, never fail the game
