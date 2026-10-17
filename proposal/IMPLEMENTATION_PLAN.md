@@ -718,6 +718,16 @@ The engine's contact detector only *annotates* the state. The referee still sees
 
 ### WS6 — Event Logging, Metrics and Analysis
 
+**Implementation status (2026-10-16):** log schemas, JSONL I/O, possession
+validation, primary/descriptive metrics, adaptation-bin calculations,
+observation logging, transcripts, experiment exports, seed-paired
+statistics/possession models, and adaptation plots are implemented and tested
+(109 tests passing; Ruff clean). `bball export` writes game, team, and
+possession CSV tables plus a JSON manifest; `bball stats` writes reproducible
+JSON results and `bball plots`
+writes PPP/MAUR/CSSR PNG curves plus pooled count/evidence CSV. Integration
+with a real game runner remains.
+
 **Event log (one JSONL file per game), record types**
 
 | Type | Key fields |
@@ -760,12 +770,29 @@ The engine's contact detector only *annotates* the state. The referee still sees
 
 **Extra descriptive metrics.** Assist rate, turnover rate, screen → shot conversion, coordination conflicts (teammates targeting the same zone), memory growth over time, and adaptation curves (PPP, MAUR, CSSR by game-time quintile).
 
+`analysis/plots.py` implements the adaptation curves from exported per-game
+bin counts. It requires both first-possession variants per seed, pools valid
+numerators/denominators by condition and bin, leaves unexposed bins blank,
+and displays overtime as a separate point. A companion CSV/manifest records
+denominators, evidence gaps, exclusions and attribution rules; output is
+deterministic and never overwrites an existing directory.
+
 **Statistics (`stats.py`)**
 - Paired by seed, with the game as the unit of analysis.
 - Per-seed difference (A − X), with a cluster bootstrap 95% CI and a Wilcoxon signed-rank test.
 - Possession-level model: `points ~ condition + score_diff + time_bin + (1 | game)`.
 - Adaptation: condition × time-bin interaction.
 - Stability (success criterion 5): sign agreement of per-seed effects.
+
+Implemented in `analysis/stats.py`: each seed requires the two opposite
+first-possession games; absent, invalid, or undefined metric pairs are excluded
+with reasons. The bootstrap resamples seeds with both games kept together.
+Wilcoxon uses per-seed average differences; all-zero and insufficient samples
+are explicit. The exploratory possession model is Gaussian with a game random
+intercept, pre-possession owning-team score difference, regulation bins and a
+separate OT bin. Opposing teams share the same game intercept; cross-game seed
+dependence is **not** represented in the model, so paired seed effects are the
+primary inference. Failed or underpowered fits are reported, not silently used.
 
 **Qualitative tools.** `bball transcript <game> <possession>` prints a readable transcript of observations, messages, calls, actions, rationales, memory references, referee calls and outcomes. This supports the Phase 3 manual review.
 

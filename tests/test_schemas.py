@@ -189,27 +189,47 @@ def test_agent_output_and_coordination():
 def test_log_records():
     # test creating sample log records
     gs = GameStartRecord(
+        schema_version=1,
         game_id="game_1",
+        experiment_id="schema_tests",
+        replicate_id="A_starts",
         seed=101,
+        first_possession="A",
+        team_conditions={"A": "A_full", "B": "B_no_comm"},
         matchup={"home": "A_full", "away": "B_no_comm"},
         coordination={"A": CoordinationConfig(), "B": CoordinationConfig(comms=False)},
         config_hash="abc123",
+        config_snapshot={},
+        prompt_hashes={},
         model_slug="openai/gpt-4o-mini",
+        code_commit=None,
         roster={},
+        initial_state=GameState(ball=BallState(pos=(7, 1), holder="A1")),
+        initial_possession_id="p0001",
     )
     assert gs.record_type == "game_start"
 
     dec = DecisionRecord(
         event_idx=1,
         player="A1",
-        raw_output="<RESPONSE/>",
+        team="A",
+        raw_output='<A1 action="HOLD"/>',
+        parsed_output=AgentOutput(action="HOLD"),
         parse_ok=True,
+        invalid_reason=None,
+        executed_action="HOLD",
+        executed_target=None,
     )
     assert dec.record_type == "decision"
 
     ball = BallState(status="HELD", pos=(7, 1))
-    st = GameState(offense="A", ball=ball)
-    sr = StateRecord(event_idx=1, state=st)
+    st = GameState(event_idx=1, offense="A", ball=ball)
+    sr = StateRecord(
+        event_idx=1,
+        state=st,
+        invariant_checks_completed=True,
+        constraints_checked=list(range(1, 21)),
+    )
     assert sr.record_type == "state"
 
     inv = InvariantViolationRecord(
@@ -221,16 +241,26 @@ def test_log_records():
     assert inv.constraint_id == 1
 
     pe = PossessionEndRecord(
+        possession_id="p0001",
         team="A",
         points=2,
+        points_by_team={"A": 2, "B": 0},
         end_reason="MADE_2PT",
-        start_event_idx=0,
+        start_event_idx=1,
         end_event_idx=3,
     )
     assert pe.points == 2
 
     ge = GameEndRecord(
+        last_event_idx=3,
+        end_reason="WIN_SCORE",
         final_score={"A": 21, "B": 15},
         ot_flag=False,
+        totals={
+            "decisions": 18,
+            "decisions_by_team": {"A": 9, "B": 9},
+            "transitions": 3,
+            "possessions_by_team": {"A": 1, "B": 1},
+        },
     )
     assert ge.final_score["A"] == 21
